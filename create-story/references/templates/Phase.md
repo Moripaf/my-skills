@@ -27,7 +27,8 @@ Tester: {{haiku/low|haiku/medium|haiku/high|sonnet/low|sonnet/medium|none}}
 
 Commands:
 
-- `{{dotnet test <TestProject>}}`
+- `{{test <dir>: <test command narrowed to this phase, e.g. uv run pytest tests/test_<area>.py>}}`
+- `{{lint <dir>: <lint command from settings>}}`
 
 Review points:
 

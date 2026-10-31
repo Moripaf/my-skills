@@ -18,6 +18,12 @@
 |---|---|
 | {{topic}} | {{decision the user made or approved, with the reason when it isn't obvious}} |
 
+## Reused tools
+
+| Capability | Tool | Use as is / customize / built here | Why |
+|---|---|---|---|
+| {{capability}} | {{package and version range, or "built here"}} | {{choice}} | {{maturity, license, fit; for "built here" the reason}} |
+
 ## {{Scope | Ownership}}
 
 | {{Item}} | {{Moves / changes / stays}} | {{Extra column if needed, e.g. "Reset?"}} |
