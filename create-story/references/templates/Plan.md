@@ -21,7 +21,7 @@ flowchart LR
 
 Start each phase in a fresh session from a clean tree:
 
-> Read `docs/Ai/Prompts/{{Story-NNN-Folder}}/Prompt.md` and run Phase NN.
+> Read `docs/stories/{{Story-NNN-Folder}}/Prompt.md` and run Phase NN.
 
 {{If a wave has several phases: "Parallel phases touch the same shared spots: <files>. Only append your own lines there; on a conflict, keep both sides."}}
 

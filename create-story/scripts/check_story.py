@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a story folder against references/story-contract.md.
 
-Usage: python3 -I check_story.py <story folder> [--repo <repo root>]
+Usage: python -I check_story.py <story folder> [--repo <repo root>]
 Exit code 1 when there are errors; warnings never fail the check.
 """
 import argparse
@@ -20,7 +20,7 @@ SECTIONS = ["Goal", "Implementation", "Tests", "Verification", "Exit criteria", 
 DIAGRAM_CHARS = re.compile(r"[─│┌┐└┘├┤┬┴┼╭╮╯╰▶►→←↑↓]|--+>|<--+|\|\s*\n\s*v\b|└─")
 FENCE = re.compile(r"^```(\w*)\s*\n(.*?)^```", re.S | re.M)
 EDGE = re.compile(r"P(\d\d)(?:\[[^\]]*\])?\s*-->\s*(?:\|[^|]*\|\s*)?P(\d\d)")
-PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.(?:cs|md|json|csproj|sln|slnx|yml|yaml|py))`")
+PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.(?:py|md|toml|cfg|ini|txt|json|ya?ml|cs|csproj|slnx?|[cm]?[jt]sx?|go|java|kt|php|rs|sql|html|css))`")
 
 errors, warnings = [], []
 
@@ -113,8 +113,8 @@ def parse_phase(path, story_no):
         err(name, f"sections must appear in order: {', '.join(SECTIONS)}")
     if builder not in (None, "none") and "Verification" in found:
         body = re.search(r"^## Verification\s*$(.*?)(?=^## |\Z)", text, re.M | re.S).group(1)
-        if "dotnet test" not in body:
-            warn(name, "'## Verification' names no `dotnet test` command for verify_phase.py")
+        if not re.search(r"`(build|test|lint) [^`:]+: [^`]+`", body):
+            warn(name, "'## Verification' has no `<build|test|lint> <dir>: <command>` line for verify_phase.py")
     if not re.search(rf"^> Run only Phase {no} of Story {story_no}\b", text, re.M):
         err(name, f"phase prompt must start with '> Run only Phase {no} of Story {story_no}'")
     return no, header, deps, text
@@ -144,6 +144,7 @@ def find_cycle(graph):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Persian text would crash a cp1252 console
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
     ap.add_argument("--repo", help="repo root for path checks (default: detected from the folder)")
@@ -153,7 +154,7 @@ def main():
         print(f"not a folder: {folder}")
         return 2
     repo = Path(args.repo).resolve() if args.repo else next(
-        (p for p in folder.parents if (p / "AGENTS.md").exists()), None)
+        (p for p in folder.parents if (p / ".git").exists()), None)
 
     m = FOLDER.match(folder.name)
     if not m:
