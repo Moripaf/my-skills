@@ -4,9 +4,9 @@
 
 ## Folder
 
-`docs/Ai/Prompts/Story-NNN-Title-In-Kebab-Case/`
+`docs/stories/Story-NNN-Title-In-Kebab-Case/`
 
-- `NNN` is the highest existing story number plus one. Some numbers (016, 025, 038, 046) are already duplicated; never reuse a number.
+- `NNN` is the highest existing story number plus one (`001` for the first). Never reuse a number.
 - English, Markdown, no `<div dir="rtl">` wrappers. Every diagram is a fenced `mermaid` block with quoted labels and no brackets or parentheses inside labels (use `·` and `<br/>`).
 
 ## Tiers
@@ -30,17 +30,18 @@ Tier: small | large
 ## How to run
 <one paragraph: what exists today, what the story changes>
 Read these first:
-1. `AGENTS.md` … (numbered; story docs; module docs; last item is always every `Phase-XX-Execution-Report.md` in this folder)
+1. `AGENTS.md` or `CLAUDE.md` … (numbered; story docs; module docs; last item is always every `Phase-XX-Execution-Report.md` in this folder)
 <run-one-phase rule; "follow the code, note the difference" rule>
 <report rule: what goes into Phase-XX-Execution-Report.md, then tick the CheckList>
 
 ## Fixed rules
-- bullet list of hard rules (migrations, module boundaries, contracts, locks, branches)
+- bullet list of hard rules (migrations, module boundaries, contracts, branches)
+- the "How we build" rules from the template: reuse before you build, right-sized design, smallest complete change, and the AI and secrets lines
 ```
 
 ### `PRD.md` (large only)
 
-Sections: `## Problem`, `## Goals`, `## Non-goals`, `## Decisions` (table `Topic | Decision`), a scope or ownership table, the behaviour spec of anything new, `## Acceptance criteria`.
+Sections: `## Problem`, `## Goals`, `## Non-goals`, `## Decisions` (table `Topic | Decision`), `## Reused tools` (table `Capability | Tool | Use as is / customize / built here | Why`), a scope or ownership table, the behaviour spec of anything new, `## Acceptance criteria`.
 
 ### `Plan.md`
 
@@ -57,7 +58,7 @@ Sections: `## Problem`, `## Goals`, `## Non-goals`, `## Decisions` (table `Topic
    ```
 
    A wave lists phases that may run **in parallel**. Sequential phases go in separate waves. Every phase is in exactly one wave, and a wave comes after the waves of all its dependencies.
-5. The session start line: `> Read \`docs/Ai/Prompts/<folder>/Prompt.md\` and run Phase NN.`
+5. The session start line: `> Read \`docs/stories/<folder>/Prompt.md\` and run Phase NN.`
 6. If any wave has more than one phase: the shared files parallel phases touch, and "only append, keep both sides on conflict".
 7. Shared recipes, guardrails, stop conditions (as needed).
 
@@ -72,7 +73,7 @@ Nothing is assumed done. Next to each tick, note the test or file that proves it
 - [ ] <provable outcome>
 
 ## Every phase
-- [ ] build and tests green · migrations listed in the report · …
+- [ ] build, tests and lint green · migrations listed in the report · …
 ```
 
 One `## Phase NN` section per phase, then `## Every phase`.
@@ -86,7 +87,7 @@ Mode: worker
 Depends on: none
 Attended: no
 Builder: sonnet/low
-Tester: haiku/high
+Tester: haiku/medium
 
 ## Goal
 ## Implementation
@@ -106,7 +107,7 @@ Tester: haiku/high
 | `Builder` | `haiku/low`, `haiku/medium`, `haiku/high`, `sonnet/low`, `sonnet/medium`, `none` | Model and effort of the build agent, which writes the code and tests (also for the code part of an interactive phase); `none` only for an interactive phase with no code |
 | `Tester` | same values | Model and effort of the test agent, which checks the build read-only; `none` exactly when `Builder` is `none` |
 
-Older stories have a single `Worker:` line instead of `Builder:` / `Tester:`. `run-story` reads it as the builder, with a `haiku/high` tester, and the checker only warns about it. New stories always use the two lines.
+Older stories have a single `Worker:` line instead of `Builder:` / `Tester:`. `run-story` reads it as the builder, with a `haiku/medium` tester, and the checker only warns about it. New stories always use the two lines.
 
 ### Who reads which section
 
@@ -115,9 +116,9 @@ A worker phase runs as a loop of two fresh agents (see `run-story`): a **build**
 | Section | Read by | Write it as |
 |---|---|---|
 | `Goal` | both | One or two sentences on the end state |
-| `Implementation` | builder | Numbered, concrete steps: which file, which type, which pattern to copy, which decision applies. A `sonnet/low` builder must be able to follow it without design judgement |
+| `Implementation` | builder | Numbered, concrete steps: which file, which type, which library and API to use, which pattern to apply and what goes where, which decision applies. A `sonnet/low` builder must be able to follow it without design judgement |
 | `Tests` | builder | The tests to write: project, class, the behaviours each test proves |
-| `Verification` | tester | The exact `dotnet test …` commands (one per line, in backticks), then 2–6 review points the tester can check from the diff alone, e.g. "a unique violation maps to `SSOException` 01xxx", "nothing in `Bina.Duel` references `Bina.Learning`" |
+| `Verification` | tester | The exact commands, one per line as `` `<build|test|lint> <dir>: <command>` `` with the project folder and commands from `docs/stories/settings.md`, then 2–6 review points the tester can check from the diff alone, e.g. "a duplicate insert raises `OrderExists`", "nothing in `app/billing` imports `app.auth`", "no new dependency in the manifest" |
 | `Exit criteria` | tester | What must be true for PASS |
 
 Guides point at real files ("roughly where"), not line numbers. They never contain run output. `run-story` writes these files next to each guide:
@@ -127,3 +128,6 @@ Guides point at real files ("roughly where"), not line numbers. They never conta
 | `Phase-NN-Build-Notes.md` | build agent, one `## Round N` block appended per round | files changed, what was done, what the builder was unsure of |
 | `Phase-NN-Test-Result.md` | test agent, overwritten each round | `VERDICT: PASS`, `FAIL` or `BLOCKED`, the `verify_phase.py` summary, a numbered fix list |
 | `Phase-NN-Execution-Report.md` | test agent on PASS (the orchestrator for interactive phases) | the phase report described in `Prompt.md` |
+| `Learn/Wave-N.md`, `Learn/Overview.md` | explainer agent after each wave / the last wave | learning docs for the developer, in the settings' docs language; outside the contract, `check_story.py` ignores `Learn/` |
+
+`docs/stories/settings.md` (shared by all stories) holds the docs language, the developer's level, `Learning mode: on|off`, the projects with their build/test/lint commands, and the concepts the learning docs already explained.
