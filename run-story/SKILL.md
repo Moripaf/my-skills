@@ -1,7 +1,7 @@
 ---
 name: run-story
-description: Orchestrate a phased user story from docs/Ai/Prompts/Story-*/ — run each worker phase as a build → test loop of cheap fresh agents (Sonnet low / Haiku), brief the user, ask about problems, and move to the next phase, in parallel where the story's Plan allows. Use when the user says "run story NNN", "/run-story", or asks to execute a story's phases.
-argument-hint: <story number or folder> [from-phase] [to-phase]
+description: Orchestrate a phased user story of any project from docs/stories/Story-*/ — run each worker phase as a build → test loop of cheap fresh agents (Sonnet low / Haiku), brief the user, ask about problems, and move to the next phase, in parallel where the story's Plan allows. Use when the user says "run story NNN", "/run-story", or asks to execute a story's phases.
+argument-hint: <story number or folder> [from-phase] [to-phase] [--auto]
 model: opus
 disable-model-invocation: true
 ---
@@ -16,17 +16,18 @@ Arguments: `$ARGUMENTS` — a story number (`048`) or folder name, optionally a 
 
 ## 1. Load the story
 
-1. Resolve the folder under `docs/Ai/Prompts/` (`Story-<NNN>-*`). If there are several matches or none, ask.
+1. Resolve the folder under `docs/stories/` (`Story-<NNN>-*`). If there are several matches or none, ask.
 2. Read `Prompt.md`, `Plan.md`, `CheckList.md` and every existing `Phase-XX-Execution-Report.md`. Skim the phase guides (`Phase-XX-*.md` that are not reports) only for their title, header block and phase prompt.
-3. Run `python3 -I .claude/skills/create-story/scripts/check_story.py <folder>`. If it passes, the story follows [the story contract](../create-story/references/story-contract.md). In that case each phase's header block (`Mode`, `Depends on`, `Attended`, `Worker`) is the source of truth, and the Plan's waves table is the parallel schedule. If it fails because of missing headers, it is an older story: infer the same facts from the Plan as described below, and say so in the run plan. If it fails for any other reason, show the errors and ask whether to go on.
+3. Pick the interpreter for the skill scripts once: `python` (on Windows `python3` is often only the Microsoft Store stub), else `python3`, else `py -3`. Call it `<python>` below. The scripts use only the standard library and work for any stack; `verify_phase.py` runs Python tools in the project's own environment (`uv`, `poetry`, `.venv`) by itself. Read `docs/stories/settings.md` (projects and their commands, docs language). If it is missing, set it up as `create-story` step 1.3 describes, asking its two questions in the same AskUserQuestion call as the run-plan questions below. Run `<python> -I <this skill's folder>/../create-story/scripts/check_story.py <folder>`. Both skills must be installed side by side. If it passes, the story follows [the story contract](../create-story/references/story-contract.md). In that case each phase's header block (`Mode`, `Depends on`, `Attended`, `Builder`, `Tester`) is the source of truth, and the Plan's waves table is the parallel schedule. If it fails because of missing headers, it is an older story: infer the same facts from the Plan as described below, and say so in the run plan. If it fails for any other reason, show the errors and ask whether to go on.
 4. Work out:
    - the dependency graph and the waves (which phases may run in parallel);
    - each phase's **mode** (section 2): `interactive` phases you run yourself, `worker` phases run as a build → test loop (section 4);
    - phases with `Attended: yes`, or in older stories marked attended / needs approval / maintainer: these never start without the user's go-ahead;
-   - which phases are already done (a ticked CheckList section **and** an execution report). A phase with `Phase-XX-Build-Notes.md` but no PASS in `Phase-XX-Test-Result.md` was interrupted: resume its loop at the test step (section 4), counting the rounds already in Build-Notes.
+   - which phases are already done (a ticked CheckList section **and** an execution report). A phase with `Phase-XX-Build-Notes.md` but no PASS in `Phase-XX-Test-Result.md` was interrupted: resume its loop at the test step (section 4), counting the rounds already in Build-Notes. A finished wave with no `Learn/Wave-<N>.md` gets its learning doc before the next wave starts; its wave base is the parent of that wave's earliest `story <NNN> phase <XX>:` commit (`git log --grep`).
 5. Show the user a short run plan (waves, mode, builder and tester per phase, which phases will pause for them) and ask once with AskUserQuestion:
-   - the story branch to work on (suggest `story/<NNN>-<slug>` from `stage`; create it if missing, never work on `stage` or `main` directly);
+   - the story branch to work on (suggest `story/<NNN>-<slug>` from the default branch: `git symbolic-ref --short refs/remotes/origin/HEAD`, else `main` or `master`; create it if missing, never work on the default branch directly);
    - whether to pause after **every** phase or only on problems (default: only on problems).
+6. On the story branch, commit the story folder and `docs/stories/settings.md` first if either is untracked or changed (`create-story` doesn't commit), as `story <NNN>: plan`. Worktrees are cut from commits, so their agents would not see uncommitted guides, and the first phase commit would sweep them in.
 
 ## 2. Choose the mode and models for each phase
 
@@ -49,21 +50,22 @@ You (Opus) run it in this session, because the decisions need you and the user t
 
 ### Builder and tester models
 
-A guide's `Builder:` and `Tester:` lines win (`sonnet/low` → `model: "sonnet"`, `effort: "low"`). `none` on both means an interactive phase with no code slice. A legacy `Worker: x` line means builder `x` and tester `haiku/high`. For older stories without any of these lines, pick per phase from this table and say which you picked in the run plan:
+A guide's `Builder:` and `Tester:` lines win (`sonnet/low` → agent type `story-worker-sonnet-low`). `none` on both means an interactive phase with no code slice. A legacy `Worker: x` line means builder `x` and tester `haiku/medium`. For older stories without any of these lines, pick per phase from this table and say which you picked in the run plan:
 
 | Phase kind | Builder | Tester |
 |---|---|---|
 | Docs, inventory, checklists, runbooks, cleanup greps | `haiku/medium` | `haiku/low` |
-| Pattern copies, self-contained moves, dead-code removal, characterization tests | `sonnet/low` | `haiku/high` |
-| Normal code: moving a slice with behaviour, adapters, endpoints | `sonnet/low` | `haiku/high` |
+| Pattern copies, self-contained moves, dead-code removal, characterization tests | `sonnet/low` | `haiku/medium` |
+| Normal code: moving a slice with behaviour, adapters, endpoints | `sonnet/low` | `haiku/medium` |
 | Hard code: concurrency, persistence model, migration specs, event flows, anything the guide calls risky | `sonnet/medium` | `haiku/high`, and say in the brief it is a high-risk phase |
 
-The user asked for these models and efforts, so pass `model` and `effort` explicitly on every Agent call. Use `subagent_type: "general-purpose"`.
+The user asked for these models and efforts. Pick them through the agent type, never through the `model` or `effort` parameters: `<model>/<effort>` → `subagent_type: "story-worker-<model>-<effort>"` (for example `sonnet/low` → `story-worker-sonnet-low`). Each of these agents (installed from this repo's `agents/` folder into `~/.claude/agents/`) pins the exact model id and effort in its frontmatter, so nothing can fall back to the session's defaults. If the type is missing, stop and tell the user to install the agents.
 
 ## 3. Where phases run
 
 - **One phase in a wave:** its build and test agents run in the main working tree, on the story branch.
-- **Several phases in a wave:** create one git worktree per phase **from the story branch** yourself (`git worktree add .claude/worktrees/s<NNN>-p<XX> -b story/<NNN>-p<XX> <story-branch>`). Don't use the Agent `isolation: "worktree"` option, because it branches from the default branch, not the story branch. Give each build and test agent the absolute worktree path and tell it to work only there.
+- **Several phases in a wave, when every project they touch builds from the worktree's own files** (dotnet, go, rust, java, python with `uv`, and node after one `<package manager> install` with the frozen lockfile inside the worktree): create one git worktree per phase **from the story branch** yourself (`git worktree add .claude/worktrees/s<NNN>-p<XX> -b story/<NNN>-p<XX> <story-branch>`), and add `.claude/worktrees/` to `.git/info/exclude` once so the main tree never sees them as untracked files. Don't use the Agent `isolation: "worktree"` option, because it branches from the default branch, not the story branch. Give each build and test agent the absolute worktree path and tell it to work only there.
+- **Otherwise** (python with a `.venv` or poetry environment, or anything whose environment lives only in the main tree): run the wave's phases one after another in the main working tree, and say so in the run plan. With an editable install, tests started in a worktree import the main tree's code and can pass without testing the phase at all.
 - After a parallel wave, merge each phase branch into the story branch one at a time (`git merge --no-ff`). The Plan names the shared files where conflicts happen. Resolve conflicts that are append-only (keep both sides). For any other conflict, stop and ask the user. Remove the worktrees after a clean merge.
 - In a parallel wave, each phase runs its own loop in its own worktree. Start the agents of different phases in one message so they really run together; the phases advance independently. Agents run in the background; wait for their completion notifications. Never guess an agent's result before it reports.
 
@@ -113,9 +115,21 @@ Phase prompt: <the phase's own "Phase prompt" text>
 Rules:
 - Write the code and the tests the guide asks for. Follow the Implementation steps in order and copy
   the patterns they name. If the code disagrees with the guide, follow the code and note it under Unsure.
-- Never create migrations, never skip or weaken tests, never suppress warnings.
-- Run `dotnet build arena-backend.slnx` until it compiles. You may run the new tests, but checking the
-  whole phase is the test agent's job, not yours.
+- Never create migrations, never skip or weaken tests, never add lint or type suppressions
+  (`# noqa`, `# type: ignore`, `eslint-disable`, `@ts-ignore`, `#pragma warning disable`, `//nolint`, …).
+- Smallest complete change: do every step the guide asks, including the callers, tests and fixtures
+  it breaks, and nothing more. Reuse a helper already in the repo, then the standard library, then an
+  installed package. Never add a dependency unless the guide says so. No abstraction, wrapper, option
+  or "for later" code the guide doesn't ask for. A known limit gets `# shortcut: <limit>, <when to upgrade>`.
+- Right-sized design: use the library, pattern and structure the guide names, exactly as it says. Don't
+  hand-write what a named library already does, and don't add layers, base classes or interfaces the
+  guide doesn't ask for. Keep one responsibility per function or class, as the surrounding code does.
+- Tests never call a real model API, the network or paid services: use fakes, mocks or recorded
+  responses as the guide says. Never write a key, token or `.env` file into the repo.
+- Check your work with <python> -I <absolute path of this skill's scripts/verify_phase.py> --base <base sha>
+  --run <kind> <dir> "<cmd>" ..., one --run per line of the guide's Verification section (it runs them in
+  the project's own environment and flags rule breaks), until it ends with MECHANICAL: PASS. Judging the
+  phase against the guide is the test agent's job, not yours.
 - Do not write the execution report and do not tick the CheckList.
 - If the phase hits one of the story's stop conditions or needs a human decision, stop and say so.
 
@@ -136,13 +150,16 @@ Read, in this order: <story folder>/Prompt.md (fixed rules), the phase guide <ph
 (Goal, Verification, Exit criteria), the "## Phase <XX>" section of <story folder>/CheckList.md, and the
 latest round in <story folder>/Phase-<XX>-Build-Notes.md.
 
-1. Run: python3 -I .claude/skills/run-story/scripts/verify_phase.py --base <base sha> --test "<cmd>" ...
-   with every `dotnet test` command from the guide's Verification section.
+1. Run: <python> -I <absolute path of this skill's scripts/verify_phase.py> --base <base sha> --run <kind> <dir> "<cmd>" ...
+   with one --run per command line `<kind> <dir>: <cmd>` in the guide's Verification section.
 2. Read `git diff <base sha>` and `git status --porcelain` (new untracked files count too). For every review
    point in Verification, every Exit criterion, every CheckList item of this phase and every Unsure line
    in Build-Notes, decide ok or not ok and cite the evidence (file, test name, or line).
-   Also look for shortcuts: assertions loosened or removed, tests that assert nothing, guide steps skipped,
-   code outside what the guide asked for.
+   Also check these facts in the diff (no design judgement; the guide's review points carry that):
+   assertions loosened or removed, tests that assert nothing, guide steps skipped, files changed that the
+   guide doesn't name, a library or pattern the guide names that is not used, a new dependency the guide
+   doesn't allow (the script prints NOTE dependency files changed), tests that reach a real model API or
+   the network. Keep it short: one line per point, no essays.
 3. Verdict: PASS only if the script ends with MECHANICAL: PASS and every review line is ok.
    BLOCKED if the phase hits a stop condition or needs a human decision. Otherwise FAIL.
 4. Overwrite <story folder>/Phase-<XX>-Test-Result.md (VERDICT, Round, script summary, Review, and on FAIL
@@ -164,7 +181,7 @@ The tester already ran the build, the tests and the rule scan, so don't repeat t
 - `git diff --stat <base>` plus untracked files match the `Files:` lines in Build-Notes, and no file outside the phase was touched.
 - Then commit everything (code, tests, Build-Notes, Test-Result, report, CheckList) as `story <NNN> phase <XX>: <summary>` (see [Commits](#commits)), and check the tree is clean.
 
-**After merging a parallel wave**, run `dotnet build arena-backend.slnx` and the merged phases' test commands yourself, once. A merge can break what each tester saw green. If that fails, start a build → test loop for the fix on the story branch, using the prompt-A fix round with your failure written into a fresh `Phase-XX-Test-Result.md`.
+**After merging a parallel wave**, run `verify_phase.py --base <story-branch sha before the wave>` with the merged phases' Verification commands yourself, once. A merge can break what each tester saw green. If that fails, start a build → test loop for the fix on the story branch, using the prompt-A fix round with your failure written into a fresh `Phase-XX-Test-Result.md`.
 
 ## Commits
 
@@ -176,6 +193,12 @@ Every phase ends in at least one commit on its branch before the next wave start
 - Stage files explicitly or with `git add -A` inside the phase's working tree; never commit files from outside the phase (for example an unrelated untracked folder the user already had) without asking.
 - Don't push.
 
+## Learning doc after each wave
+
+Before each wave starts, record the story branch's sha (`git rev-parse HEAD`): that is the wave base. When the wave is merged, checked and committed, and before you brief the user, start one fresh **explainer** agent with prompt C from [references/learn-doc.md](references/learn-doc.md). Every wave gets a doc. It writes `<story folder>/Learn/Wave-<N>.md` in the settings' docs language: what the wave did, a diagram of what was really built, each decision taken with its reason and its effect on later work, the key ideas, the code that matters (every excerpt explained), how it was tested, and the pitfalls. Wait for its `LEARN: done` line, then commit the doc (and the `docs/stories/settings.md` update) as `story <NNN> wave <N>: learning doc`. Don't read the doc yourself; its line is enough for your brief.
+
+The doc never blocks the code: if the explainer fails or replies with something else, say so in the brief and go on. After the last wave of a story with two or more waves, start it once more for `Learn/Overview.md`, the summary of all waves (see the reference). A one-wave story gets no Overview: `Wave-1.md` already is the whole story.
+
 ## 6. Brief the user after each wave
 
 Keep it short:
@@ -186,24 +209,39 @@ Wave <n> — Phase <XX> (build <model/effort>, test <model/effort>, <N> rounds):
 - Tests: <build ok, N passed / M failed>
 - Migrations the maintainer must create: <none | list>
 - Deviations: <none | 1 line each>
+- Learn: <story folder>/Learn/Wave-<n>.md — <word count> words, <concepts it explains>
 Next: Phase <YY>[, <ZZ> in parallel]
 ```
+
+If this chat already held a lot besides the story, add one line: every turn re-reads the whole chat, and the story's state lives in files and git, so `/clear` (or a new chat) and `/run-story <NNN>` resumes at the next wave for a fraction of the cost.
 
 Then:
 
 - **Problems** (BLOCKED, a second FAIL, a failed post-merge build, a non-trivial merge conflict, questions from Build-Notes or Test-Result, deviations that change scope or a contract, stop conditions): ask with AskUserQuestion. Give the options and your recommendation first. Don't start dependent phases until the user answers.
 - **Attended phases next:** ask before you start them.
+- **Learning mode** (`Learning mode: on` in `docs/stories/settings.md`): pause after every wave. Ask with AskUserQuestion whether they have read the doc: **Continue** to the next wave, or **Discuss** first. On Discuss, answer their questions about this wave's code plainly, in the docs language, from the doc and the real files, then ask again.
 - **Otherwise:** continue straight to the next wave, unless the user chose to pause after every phase.
 
 ## 7. Finish
 
-When the requested phases are done, give a final brief: phases completed, all migrations the maintainer must create (from every report), open items, and the branch to review. Don't push, open an MR or merge into `stage`/`main` unless the user asks.
+When the requested phases are done, write `Learn/Overview.md` if the story has two or more waves (see [Learning doc after each wave](#learning-doc-after-each-wave)), then give a final brief: phases completed, all migrations the maintainer must create (from every report), open items, the learning docs to read (Overview first), and the branch to review. Don't push, open a PR or merge into the default branch unless the user asks.
 
 ## Rules for the orchestrator
 
 - Never write phase code yourself unless the user tells you to take a phase over. Interactive phases are the exception for their docs and decisions, not for their code.
-- One agent = one phase and one step. Never give a build or test agent two phases, never let the builder judge its own work, and never let the tester edit code.
+- One agent = one phase and one step (the explainer: one wave, docs only). Never give a build or test agent two phases, never let the builder judge its own work, and never let the tester edit code.
 - Every round is a fresh agent. Don't resume build or test agents with SendMessage: their context would grow, which is what the loop exists to avoid.
-- Follow the story's `Prompt.md` and the repo's `AGENTS.md` as hard rules for every agent and yourself (no migrations, Mermaid diagrams only, and so on).
+- Follow the story's `Prompt.md` and the repo's `AGENTS.md` / `CLAUDE.md` as hard rules for every agent and yourself (no migrations, smallest complete change, Mermaid diagrams only, and so on).
 - One phase = at least one commit, with no co-author or AI attribution (see [Commits](#commits)).
 - State comes from the CheckList, the reports and the handoff files, so the skill can be restarted at any time: a phase with a report, a ticked CheckList and a PASS Test-Result (or, in older stories, a report and a ticked CheckList) is done.
+- Every turn of yours re-reads your whole context, so use few turns: put independent shell commands in one Bash call (for example the light check's `git diff --stat`, `git status` and the `head -1` of Test-Result together), and start independent agents in one message.
+
+## Unattended mode (`--auto`)
+
+With `--auto` in the arguments (`run-story-auto.sh` passes it; no human answers):
+
+- Do only the next unfinished wave, with its learning doc, then stop. After the last wave, also write the Overview (two or more waves only).
+- Never call AskUserQuestion. Branch: `story/<NNN>-<slug>` from the default branch; pause policy: only on problems; settings: as they are (if `docs/stories/settings.md` is missing, stop as below).
+- Every place that would ask the user (problems, attended phases, learning mode, a missing settings file) instead writes the question, the options and your recommendation to `<story folder>/NEEDS-USER.md`, and stops. Don't start dependent work. On the next run, read the user's answer there first, act on it, then delete the file in the next commit.
+- Skip the `/clear` hint in the brief.
+- The last line of your reply is exactly one of: `WAVE DONE`, `ALL WAVES DONE`, `NEEDS USER`.
