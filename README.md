@@ -24,9 +24,10 @@
 ## نصب
 
 ```bash
-cp -r create-story run-story ~/.claude/skills/
-cp agents/*.md ~/.claude/agents/
+bash install.sh
 ```
+
+اسکریپت برای هر پوشه‌ی دارای `SKILL.md` و هر `agents/*.md` یک symlink در `~/.claude` می‌سازد، پس تغییر در ریپو فوری اعمال می‌شود. فقط بعد از اضافه‌کردن اسکیل یا agent جدید یک‌بار دوباره اجرایش کن (امن و idempotent است؛ فایل واقعی را رونویسی نمی‌کند).
 
 نیاز به Claude Code نسخه 2.1.280 یا بالاتر (برای `claude-opus-5-5`).
 
