@@ -10,6 +10,7 @@
 | `create-story/scripts/check_story.py` | چک ساختار استوری (هدرها، موج‌ها، وابستگی‌ها، حلقه) |
 | `create-story/scripts/detect_project.py` | تشخیص زبان، runner و دستورهای تست پروژه برای `settings.md` |
 | `create-story/references/` | قرارداد استوری و قالب فایل‌ها |
+| `h-fa-humanize/` | skill ویرایش متن فارسی: حذف ترجمه‌زدگی و نشانه‌های نوشتهٔ هوش مصنوعی، با حفظ واقعیت‌ها و قالب سند (شامل `scripts/` و `references/`) |
 | `run-story/` | skill اجرا: هر موج، builder ← tester ← ادغام ← سند آموزشی |
 | `run-story/scripts/verify_phase.py` | چک مکانیکی هر فاز: lint، تست، قانون‌ها (skip، noqa، migration، وابستگی جدید) |
 | `run-story/scripts/learn_doc.py` | بسته‌بندی سند آموزشی در استایل خانه و چک آن |
