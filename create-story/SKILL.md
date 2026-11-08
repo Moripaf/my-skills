@@ -100,7 +100,9 @@ Pick the tier from the contract (small or large) and say why. Write the plan fil
 
   - interactive phases with no code get `Builder: none` and `Tester: none`; an interactive phase with a code slice gets a pair for that slice;
   - make phases parallel only when they touch different code. List the shared files they will both append to.
-- **Waves**: a wave holds phases that run in parallel; sequential phases go in separate waves.
+- **Schedules**: write both, because `run-story` lets the user pick either one and switch between them as it runs:
+  - **waves**: a wave holds phases that run in parallel; sequential phases go in separate waves. They are simple to follow and give natural review points;
+  - **dependency schedule**: each phase starts as soon as its `Depends on` phases are merged. Name the critical path (the longest chain). This is faster when a wave holds phases with very different dependencies, because no phase waits for an unrelated phase of the wave before it.
 - **Files to write**: the file list for the story folder.
 
 Call `ExitPlanMode`. If the user rejects it or comments, revise the plan and call it again. Write nothing outside the plan file before approval.
@@ -131,12 +133,12 @@ Run `<python> -I <this skill's folder>/scripts/check_story.py docs/stories/<fold
 End with a short message:
 
 - the folder and the tier;
-- the phase table (No, Title, Mode, Attended, Builder, Tester) and the waves;
+- the phase table (No, Title, Mode, Attended, Builder, Tester), the waves, and the critical path of the dependency schedule, with one line on what dependency mode gains (for example "Phases 12, 15 and 16 can start right after 08, without waiting for the rest of wave 6");
 - the migrations the story expects the maintainer to create;
 - the decisions the user made, and separately the choices you made on your own;
 - the reused tools per capability, and what was built here and why;
 - what was skipped on purpose, and any risk the user must know;
-- that `run-story` writes a learning doc per wave and an Overview in `Learn/`, in the docs language (and pauses for it when learning mode is on);
+- that `run-story` asks whether to run by waves or by dependencies (and can switch at each checkpoint), and writes a learning doc per wave or checkpoint and an Overview in `Learn/`, in the docs language (and pauses for it when learning mode is on);
 - the command to start it: `/run-story NNN`, best in a fresh chat (`/clear` or a new one): it needs nothing from this chat, and a long chat is re-read on every turn. Don't start it yourself.
 
 Don't commit unless the user asks.

@@ -58,8 +58,9 @@ Sections: `## Problem`, `## Goals`, `## Non-goals`, `## Decisions` (table `Topic
    ```
 
    A wave lists phases that may run **in parallel**. Sequential phases go in separate waves. Every phase is in exactly one wave, and a wave comes after the waves of all its dependencies.
+4b. `## Dependency schedule`: a table `| Phase | Starts when merged |`. Each row has one or more phases (`12, 15, 16`) and the phases that must be merged first, or `Now`. Every phase appears exactly once, and its row equals its `Depends on` header. Then a line `Critical path: 00 → 01 → …`, naming the longest dependency chain. `run-story` uses this table when it runs in dependency mode, and the waves table in wave mode. Older stories without this section can only run by waves (`check_story.py` warns).
 5. The session start line: `> Read \`docs/stories/<folder>/Prompt.md\` and run Phase NN.`
-6. If any wave has more than one phase: the shared files parallel phases touch, and "only append, keep both sides on conflict".
+6. If any two phases can run at the same time, in a wave or in the dependency schedule: the shared files parallel phases touch, and "only append, keep both sides on conflict".
 7. Shared recipes, guardrails, stop conditions (as needed).
 
 ### `CheckList.md`

@@ -19,11 +19,22 @@ flowchart LR
 | 1 | 00 | Now |
 | 2 | 01 | Phase 00 is merged |
 
+## Dependency schedule
+
+`run-story` can run by the waves above, or start each phase as soon as the phases it depends on are merged. The second way doesn't wait for a whole wave. Each row lists one or more phases and the phases they need merged first (`Now` means none).
+
+| Phase | Starts when merged |
+|---|---|
+| 00 | Now |
+| 01 | 00 |
+
+Critical path: {{the longest dependency chain, e.g. 00 → 01 → 03 → 05}}. When more phases are ready than may run at once, phases on the critical path go first, then phases that unblock the most others.
+
 Start each phase in a fresh session from a clean tree:
 
 > Read `docs/stories/{{Story-NNN-Folder}}/Prompt.md` and run Phase NN.
 
-{{If a wave has several phases: "Parallel phases touch the same shared spots: <files>. Only append your own lines there; on a conflict, keep both sides."}}
+{{If any two phases can run at the same time, in a wave or in the dependency schedule: "Parallel phases touch the same shared spots: <files>. Only append your own lines there; on a conflict, keep both sides."}}
 
 ## {{Shared recipe: <name>}}
 

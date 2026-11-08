@@ -255,6 +255,30 @@ def main():
             for d in deps:
                 if no in wave_of and d in wave_of and wave_of[d] >= wave_of[no]:
                     err("Plan.md", f"phase {no} (wave {wave_of[no]}) must come after its dependency {d} (wave {wave_of[d]})")
+        # Dependency schedule: | Phase | Starts when merged |, one row per phase or group of phases.
+        dep_rows = re.findall(
+            r"^\|\s*(\d\d(?:\s*,\s*\d\d)*)\s*\|\s*(Now|\d\d(?:\s*,\s*\d\d)*)\s*\|\s*$", plan, re.M)
+        if "## Dependency schedule" not in plan:
+            warn("Plan.md", "no '## Dependency schedule' section; run-story can only run it by waves")
+        elif not dep_rows:
+            err("Plan.md", "dependency schedule has no table (| Phase | Starts when merged |)")
+        else:
+            starts = {}
+            for cell, when in dep_rows:
+                needs = set() if when == "Now" else set(re.findall(r"\d\d", when))
+                for no in re.findall(r"\d\d", cell):
+                    if no in starts:
+                        err("Plan.md", f"dependency schedule lists phase {no} twice")
+                    starts[no] = needs
+            for no in phases:
+                if no not in starts:
+                    err("Plan.md", f"dependency schedule has no row for phase {no}")
+                elif starts[no] != set(graph.get(no, [])):
+                    want = ", ".join(sorted(graph.get(no, []))) or "Now"
+                    err("Plan.md", f"dependency schedule: phase {no} must start when {want} is merged (its 'Depends on')")
+            for no in starts:
+                if no not in phases:
+                    err("Plan.md", f"dependency schedule names missing phase {no}")
         if "/Prompt.md` and run Phase" not in plan:
             err("Plan.md", "missing the session start line ('Read `…/Prompt.md` and run Phase NN.')")
 
