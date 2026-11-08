@@ -12,7 +12,9 @@ even when the command says plain `python -m` or `pytest`.
 
 Also scans everything changed since <base> (commits, staged, unstaged and untracked files) for rule
 breaks: skipped or disabled tests, lint/type suppressions, migrations, deleted tests, secrets, .env
-files, model weights and large files. Prints a short summary, never full logs, and ends with
+files, model weights and large files. Output is streamed: rule breaks print as found, each command
+prints a RUNNING line, and build errors / failed tests print as `live:` lines the moment the tool emits
+them, so a reader can start fixing the first one while the rest runs. Prints a short summary, never full logs, and ends with
 `MECHANICAL: PASS` or `MECHANICAL: FAIL`. Exit code 1 on FAIL, 2 on bad arguments.
 """
 import argparse
@@ -21,6 +23,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 ANY = re.compile(r"")
@@ -77,14 +80,27 @@ def git(repo, *args):
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
 
 
-def run(cwd, cmd):
+def run(cwd, cmd, live=None):
+    """Run cmd, streaming its output; lines matching `live` are printed the moment they appear so the
+    caller can start on the first failure while the rest of the command is still running."""
+    p = subprocess.Popen(cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, encoding="utf-8", errors="replace")
+    timer = threading.Timer(timeout, p.kill)  # shortcut: on Windows a child of the shell can outlive the kill
+    timer.start()
+    out, seen = [], set()
     try:
-        p = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout)
-    except subprocess.TimeoutExpired:
-        # shortcut: on Windows a child of the shell can outlive the timeout, kill it by hand if it hangs
-        return 124, f"timed out after {timeout}s (a test may be waiting on the network or a real model API)"
-    return p.returncode, p.stdout + p.stderr
+        for line in p.stdout:
+            out.append(line)
+            if live and live.search(line) and line.strip() not in seen:
+                seen.add(line.strip())
+                print(f"  live: {line.strip()[:300]}")
+        code = p.wait()
+    finally:
+        timed_out = not timer.is_alive()
+        timer.cancel()
+    if timed_out and code:
+        return 124, "".join(out) + f"\ntimed out after {timeout}s (a test may be waiting on the network or a real model API)"
+    return code, "".join(out)
 
 
 def py_runner(d):
@@ -263,7 +279,8 @@ def check_rules(repo, base):
 
 def main():
     global timeout
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Persian text would crash a cp1252 console
+    # line-buffered so a reader of a pipe or log file sees each problem as soon as it is found
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)  # Persian text would crash a cp1252 console
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True, help="commit the phase started from")
     ap.add_argument("--run", nargs=3, action="append", default=[], metavar=("KIND", "DIR", "CMD"),
@@ -290,8 +307,10 @@ def main():
             if k != kind:
                 continue
             cwd = (repo / d).resolve()
-            code, out = run(cwd, in_env(cwd, given))
             label = given if d == "." else f"{d}: {given}"
+            print(f"RUNNING {kind.upper()} `{label}` ...")
+            live = {"build": ERROR_LINE, "test": FAILED, "lint": None}[kind]  # lint needs the diff filter first
+            code, out = run(cwd, in_env(cwd, given), live)
             if kind == "build":
                 do_build(repo, cwd, label, out, code)
             elif kind == "lint":
