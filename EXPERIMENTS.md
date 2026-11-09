@@ -61,3 +61,11 @@ Found: the story's docker test commands mount a fixed path (`-v E:/Project-Arian
 - Throwaway repo or a story branch. Nothing is pushed.
 - Record the scorecard in `results/<experiment>.md` next to the story.
 - Keep a change only if the scorecard rule above holds. Otherwise revert it.
+
+## Results: integra Story 002, phases 18 and 19, Codex `terra` builders, 2026-11-09
+
+| Run | Tool calls | Input (cached) | Output | Note |
+|---|---|---|---|---|
+| 13 `codex exec` runs, `gpt-6.1-terra` medium | 12–170 each, ~800 total | ~53M (98%) | ~150k | Most of a $20 plan's 5-hour window |
+
+The cost tracks tool calls × context, not code written. The four runs with 94–170 calls cost 7.5–10M each. Drivers: solution-wide build and test loops in the builder, polling the `verify_phase.py` log, fan-out of seven parallel workers that each re-read the guides, and two BLOCKED stops plus resumes caused by one ambiguous prompt ban ("csproj must not change"). Changes made: Codex builders run only narrow checks and the Claude tester runs `verify_phase.py` once; no log polling in prompts A and B; one sequential Codex builder per phase by default; prompts say what is allowed. See `delegate-codex/SKILL.md`, "Keep the quota down". Next run: compare input tokens per phase against these numbers.

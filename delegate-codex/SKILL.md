@@ -96,6 +96,26 @@ codex exec resume \
 - `codex exec resume` can also add follow-up instructions to a *finished* session, which is cheaper than a cold start when the next step builds on the last. For an independent task, start fresh.
 - Sessions live under `~/.codex/sessions/`. `codex archive <id>` / `codex delete <id>` clean them up. (`codex queue --thread <id> --message ...` queues a message for a session, but it is meant for a running app-server/TUI, not for `exec`.)
 
+## Keep the quota down
+
+Codex sends the whole session context again on every tool call. So the bill grows with **tool calls × context size**, not with the code the worker writes. A real run (Story 002 of integra, 2 .NET phases, 13 `codex exec` runs on `terra` medium, 2026-11-09) used about 53M input tokens, 98% of them cached, and only 150k output tokens. That emptied most of a $20 plan's 5-hour window. The runs with 120 to 170 shell calls cost 9 to 10M each; the runs with 12 to 30 calls cost 0.2 to 1M.
+
+What drove the cost, in order, and what to do instead:
+
+1. **Build and test loops.** Every `dotnet build` or `dotnet test` is one turn that sends 50–100k of context again. Give the worker the **narrowest** commands: one project and a test filter, never the whole solution while it is still iterating. Leave the full-solution check to a reviewer that bills somewhere else (a Claude tester), or to one final run.
+2. **Polling a log.** "Run it in the background and read the log as it grows" makes one slow build into dozens of `tail` calls, each one sending the context again. Run a long check **once in the foreground**, with output to a file, and read only the summary lines afterwards (for example `grep -E 'error|Failed|FAIL|RULE|MECHANICAL'`).
+3. **Fan-out.** Every parallel worker reads the same guides and patterns again (30–50k each), and every `resume` replays its history. Parallel workers save wall-clock time, not quota; they cost more in total. Default to **one sequential worker per task**. Split only when the user asks for speed, or when the parts truly share no context.
+4. **Vague prohibitions.** One ambiguous line ("csproj files must not change") cost two blocked runs plus two resumes. Say exactly what is forbidden and what is allowed (for example, "no new package; adding a ProjectReference is fine").
+5. **Reading to orient.** Name the files to read and the file to create first, so the worker doesn't explore. Paste short facts into the prompt instead of pointing at a 40k guide.
+6. **Tier and effort.** Use `luna`, or `low` effort, for mechanical slices. Go up a tier only after a real failure.
+
+Measure every run from its `--json` events, which cost nothing to read this way:
+
+```bash
+grep -h '"turn.completed"' <name>-events*.jsonl | grep -o '"\(cached_\)\?input_tokens":[0-9]*\|"output_tokens":[0-9]*'
+grep -c '"command_execution"' <name>-events.jsonl   # tool calls: the number to watch
+```
+
 ## Writing the prompt
 
 The worker starts cold, so include:

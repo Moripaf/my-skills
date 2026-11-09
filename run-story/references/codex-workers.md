@@ -32,6 +32,16 @@ What each part does:
 
 All settings are `-c` overrides on this one call. `~/.codex/config.toml` stays unchanged, so interactive Codex keeps its own defaults.
 
+## Quota: what a Codex builder runs
+
+A Codex step re-sends its whole context on every shell call, so a builder that loops on full builds empties a small plan quickly. Story 002 of integra (2 phases, 13 `terra` medium runs, 2026-11-09) used about 53M input tokens and 150k output, most of a $20 plan's 5-hour window. The details and the general rules are in `delegate-codex/SKILL.md`, "Keep the quota down". For run-story:
+
+- **The Codex builder runs only the narrow checks**: the one or two projects it changed, with a `--filter` for its tests. It does **not** run `verify_phase.py` or the solution build. Replace the "Check your work with verify_phase.py" bullet of prompt A with those narrow commands.
+- **The tester runs `verify_phase.py` once** (a Claude `story-worker-haiku-*`, which bills Claude, not Codex). A mechanical failure there comes back as a numbered fix, as usual.
+- **One Codex builder per phase, in sequence.** Don't split a phase into parallel workers to save time unless the user asks for it. Every worker re-reads the same guides, and the shared files (`<M>Module.cs`, csproj files, Build-Notes) need extra rounds to merge.
+- **Prompts name what is allowed, not only what is forbidden.** For example: "no new NuGet package; a ProjectReference that follows the module rules is fine". An ambiguous ban made two workers stop as BLOCKED.
+- **No log polling.** Any long command runs in the foreground with output to a file, and the worker reads only the summary lines.
+
 ## How the orchestrator runs it
 
 1. Fill the prompt exactly as for a subagent and write it to a scratchpad file.

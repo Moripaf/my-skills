@@ -150,10 +150,11 @@ Rules:
   responses as the guide says. Never write a key, token or `.env` file into the repo.
 - Check your work with <python> -I <absolute path of this skill's scripts/verify_phase.py> --base <base sha>
   --run <kind> <dir> "<cmd>" ..., one --run per line of the guide's Verification section (it runs them in
-  the project's own environment and flags rule breaks), until it ends with MECHANICAL: PASS. It streams:
-  run it in the background with output to a log file and read the log as it grows; fix each RULE or
-  `live:` problem as it appears instead of waiting for the end, then rerun once it finishes. Judging the
-  phase against the guide is the test agent's job, not yours.
+  the project's own environment and flags rule breaks), until it ends with MECHANICAL: PASS. While you
+  iterate, run only the narrow build and test of the projects you changed. Run verify_phase.py once at the
+  end, in the foreground with output to a log file, then read only its problem lines
+  (`grep -E 'RULE|live:|NOTE|MECHANICAL' <log>`), fix them and rerun. Don't poll the log: every read is
+  a turn that re-sends your whole context. Judging the phase against the guide is the test agent's job, not yours.
 - Do not write the execution report and do not tick the CheckList.
 - If the phase hits one of the story's stop conditions or needs a human decision, stop and say so.
 
@@ -176,9 +177,9 @@ latest round in <story folder>/Phase-<XX>-Build-Notes.md.
 
 1. Run: <python> -I <absolute path of this skill's scripts/verify_phase.py> --base <base sha> --run <kind> <dir> "<cmd>" ...
    with one --run per command line `<kind> <dir>: <cmd>` in the guide's Verification section.
-   It streams problems as found (RULE lines, then `live:` build errors and failed tests): run it in the
-   background with output to a log file, start step 2 meanwhile, and note each problem from the log as it
-   appears. Wait for the final MECHANICAL line before the verdict.
+   Run it in the background with output to a log file and do step 2 meanwhile. When step 2 is done, wait
+   for it to finish, then read only its problem lines once (`grep -E 'RULE|live:|NOTE|MECHANICAL' <log>`).
+   Don't poll the log while it runs. Wait for the final MECHANICAL line before the verdict.
 2. Read `git diff <base sha>` and `git status --porcelain` (new untracked files count too). For every review
    point in Verification, every Exit criterion, every CheckList item of this phase and every Unsure line
    in Build-Notes, decide ok or not ok and cite the evidence (file, test name, or line).
