@@ -10,7 +10,7 @@ Run a bounded task in `agy -p` (print mode: one prompt, no TUI, exits when done)
 
 ## What agy is good for here
 
-Edits inside the workspace and reading work headless with no setup. **Shell commands are denied by default** in print mode, because nothing can prompt for approval. So agy suits reading, analysis, summarising, review, research, and file edits. It does not suit "build and run the tests" unless you grant a scoped command allowlist (see below). If the task needs to run builds, tests or git, say so to the user and consider `delegate-codex` or a Claude subagent instead.
+Reading works headless with no setup. **File edits need `--mode accept-edits`**: in the default print mode every file write asks for review, nothing can answer it, so it is denied (verified on agy 1.5.3 for repos under `$HOME`; writes under `/tmp` happen to pass, which is why this was missed at first). `trustedWorkspaces` does not change this. **Shell commands are denied by default** in print mode, because nothing can prompt for approval. So agy suits reading, analysis, summarising, review, research, and file edits. It does not suit "build and run the tests" unless you grant a scoped command allowlist (see below). If the task needs to run builds, tests or git, say so to the user and consider `delegate-codex` or a Claude subagent instead.
 
 ## Pick the tier
 
@@ -33,11 +33,11 @@ MODEL=$(bash ~/.claude/skills/delegate-agy/scripts/agy_model.sh flash medium)   
 ```bash
 cd <working dir>      # agy has no -C; it works in the current directory
 agy -p "$(cat <scratchpad>/<name>-prompt.md)" \
-  --model "$MODEL" --output-format json \
+  --model "$MODEL" --mode accept-edits --output-format json \
   > <scratchpad>/<name>-result.json 2><scratchpad>/<name>-err.txt
 ```
 
-Run it with Bash `run_in_background: true` to keep working; add `--print-timeout 20m` (any duration) to bound a stuck run. Use `--add-dir <dir>` to give the worker more directories. Parallel workers should use separate directories or disjoint files.
+Run it with Bash `run_in_background: true` to keep working; add `--print-timeout 20m` (any duration) to bound a stuck run. Always pass `--mode accept-edits` (also on resume) unless the task is read-only. Use `--add-dir <dir>` to give the worker more directories, and give it **absolute paths** for files to write: with `--add-dir`, a relative path was resolved against the added dir instead of the working dir, and the worker still replied DONE with no `denied_actions`. Parallel workers should use separate directories or disjoint files.
 
 The result JSON has `conversation_id`, `status`, `response`, `duration_seconds`, `num_turns`, `usage`, and `denied_actions` when something was blocked. Read it with `jq`, for example `jq '{status, response, denied_actions}'`. For live progress use `--output-format stream-json` (events carry the `conversation_id` from the first `init` line), but never read that stream whole.
 
@@ -53,7 +53,7 @@ Verify real work yourself (run the tests, read the diff) rather than trusting th
 
 ## Letting the worker run commands (restricted)
 
-Never pass `--dangerously-skip-permissions` to a delegated worker. It removes all containment and was only used to learn how agy behaves. Default print mode already allows edits inside the workspace and auto-denies everything else, so grant exactly the commands the task needs through a per-run `--settings` allowlist.
+Never pass `--dangerously-skip-permissions` to a delegated worker. It removes all containment and was only used to learn how agy behaves. `--mode accept-edits` allows edits inside the workspace and still denies writes outside it and all commands, so grant exactly the commands the task needs through a per-run `--settings` allowlist.
 
 ### Per-project permissions file (don't rebuild the rules each time)
 
@@ -64,7 +64,7 @@ S=~/.claude/skills/delegate-agy/scripts/agy_settings.py
 python3 $S init                      # once per project: read-only git + ls base, plus build/test/lint profiles detected from the stack
 python3 $S show                      # see what is saved
 S_JSON=$(python3 $S emit --profile test --extra 'command(dotnet test tests/Foo.Tests)')
-agy -p "..." --model "$MODEL" --settings "$S_JSON" --output-format json
+agy -p "..." --model "$MODEL" --mode accept-edits --settings "$S_JSON" --output-format json
 python3 $S add 'command(dotnet format --verify-no-changes)' --profile lint   # keep a task rule for next time
 ```
 
@@ -87,9 +87,9 @@ Residual risk: a build or test command runs the project's own code, which can do
 Other flags, tested:
 
 - `--mode auto` is **not available on this account**: agy warns "not available for this account" and falls back to the default mode, so it is not an option here.
-- `--mode accept-edits` behaves like the default for headless runs: edits yes, commands no.
+- `--mode accept-edits` is required for headless edits: edits inside the workspace yes, commands no. Without it the default mode (`toolPermission=request-review` in agy's log) soft-denies every `WriteFile` outside `/tmp`, and the run ends with an empty `response` and `denied_actions: [write_file]`.
 - `--mode plan` writes a plan and waits for approval; it creates no files, so it is useless for headless work.
-- Writing a file **outside** the workspace with the file tool is denied by default, so the workspace boundary holds for edits. It does not hold for allowed commands (above).
+- Writing a file **outside** the workspace with the file tool is denied, also with `--mode accept-edits` (verified), so the workspace boundary holds for edits. It does not hold for allowed commands (above).
 
 ## Pause and resume
 
@@ -98,7 +98,7 @@ A conversation can be continued by id; context is kept (verified):
 ```bash
 ID=$(jq -r .conversation_id <scratchpad>/<name>-result.json)
 agy -p "<follow-up or 'You were interrupted; continue, check state first'>" \
-  --conversation "$ID" --model "$MODEL" --output-format json > <scratchpad>/<name>-result2.json
+  --conversation "$ID" --model "$MODEL" --mode accept-edits --output-format json > <scratchpad>/<name>-result2.json
 ```
 
 `-c` continues the most recent conversation, but with parallel workers always pass the explicit id. Resume is also the cheap way to add a follow-up to a finished task. To pause a run, send `kill -INT <pid>` to the PID of the background `agy` you started (never `pkill -f agy`, which can hit the user's own sessions). Resuming after an interrupt works (verified: SIGINT mid-`sleep`, then `--conversation <id>` finished the task and still remembered an earlier instruction). The id comes from the first `init` line of `--output-format stream-json`, so use stream-json if you may need to pause a run before it finishes. The in-flight command is lost, so check `git status` and tell the worker what was interrupted before continuing. Settings from `--settings` are per-run, so pass them again on resume.
@@ -111,7 +111,8 @@ Size the task to something the worker can start without more planning (one file,
 
 ## Handling failures
 
-- Empty response / `denied_actions`: a permission block. Add the missing prefix allow rule if it is safe (see the rules above), or move the task to a tool that can run commands.
+- Empty response / `denied_actions` with `write_file`: you forgot `--mode accept-edits`, or the path is outside the workspace (add it with `--add-dir`). Agy's log at `~/.gemini/antigravity-cli/cli.log` shows `soft-denying tool confirmation "WriteFile"`.
+- Empty response / `denied_actions` with a command: a permission block. Add the missing prefix allow rule if it is safe (see the rules above), or move the task to a tool that can run commands.
 - Quit without editing: don't rerun the same prompt. Resume the conversation with a direct nudge ("Create `<file>` now"), or shrink the task or move up a tier.
 - `invalid model selection`: you passed `--effort` with a flash slug, or the slug no longer exists; rerun `agy_model.sh` and `agy models`.
 - Never delegate secrets or content the user wouldn't want sent to a third-party model; agy sends the prompt and the files it reads to Google (or the chosen provider).
